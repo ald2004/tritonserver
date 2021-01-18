@@ -23,6 +23,7 @@
 #define TRITON_ENABLE_GPU
 #define TRITON_MIN_COMPUTE_CAPABILITY 6.0
 #endif // !TRITON_ENABLE_GPU
+#define TRITON_VERSION "2.7.0dev"
 
 #ifndef TRITON_ENABLE_HTTP
 #define TRITON_ENABLE_HTTP
@@ -36,24 +37,24 @@
 #undef TRITON_ENABLE_METRICS
 #endif // TRITON_ENABLE_METRICS
 
-#if defined(TRITON_ENABLE_HTTP)
-// The number of threads to initialize for the HTTP front-end.
-int http_thread_cnt_ = 8;
-#endif  // TRITON_ENABLE_HTTP
-
-//#ifdef TRITON_ENABLE_TRACING
-//#undef TRITON_ENABLE_TRACING
-//#endif // TRITON_ENABLE_TRACING
-
-
-#define TRITON_ENABLE_LOGGING
 
 
 #ifdef TRITON_ENABLE_TRACING
-std::string trace_filepath_;
-TRITONSERVER_InferenceTraceLevel trace_level_ = TRITONSERVER_TRACE_LEVEL_DISABLED;
-int32_t trace_rate_ = 1000;
-#endif  // TRITON_ENABLE_TRACING
+#undef TRITON_ENABLE_TRACING
+#endif // TRITON_ENABLE_TRACING
+
+
+#define TRITON_ENABLE_LOGGING
+//#define TRITON_ENABLE_TRACING
+//#define TRITON_ENABLE_CUSTOM
+//#define TRITON_ENABLE_TENSORRT
+//#ifdef TRITON_ENABLE_TRACING
+#define TRITON_ENABLE_PYTORCH
+
+//std::string trace_filepath_;
+//TRITONSERVER_InferenceTraceLevel trace_level_ = TRITONSERVER_TRACE_LEVEL_DISABLED;
+//int32_t trace_rate_ = 1000;
+//#endif  // TRITON_ENABLE_TRACING
 
 #ifdef __cplusplus
 extern "C" {
@@ -1683,110 +1684,6 @@ extern "C" {
         TRITONSERVER_InferenceTrace* trace);
 
 
-// Interval, in seconds, when the model repository is polled for changes.
-int32_t repository_poll_secs_ = 15;
-
-std::string server_id("triton");
-std::set<std::string> model_repository_paths;
-bool exit_on_error = true;
-bool strict_model_config = true;
-bool strict_readiness = true;
-std::list<std::pair<int, uint64_t>> cuda_pools;
-int32_t exit_timeout_secs = 30;
-int32_t repository_poll_secs = repository_poll_secs_;
-int64_t pinned_memory_pool_byte_size = 1 << 28; //268435456
-int32_t buffer_manager_thread_count = 0;
-
-std::string backend_dir = "/opt/tritonserver/backends";
-std::vector<std::tuple<std::string, std::string, std::string>>backend_config_settings;
-#define required_argument 1
-#define no_argument 2
-// Command-line options
-enum OptionId {
-    OPTION_HELP = 1000,
-#ifdef TRITON_ENABLE_LOGGING
-    OPTION_LOG_VERBOSE,
-    OPTION_LOG_INFO,
-    OPTION_LOG_WARNING,
-    OPTION_LOG_ERROR,
-#endif  // TRITON_ENABLE_LOGGING
-    OPTION_ID,
-    OPTION_MODEL_REPOSITORY,
-    OPTION_EXIT_ON_ERROR,
-    OPTION_STRICT_MODEL_CONFIG,
-    OPTION_STRICT_READINESS,
-#if defined(TRITON_ENABLE_HTTP)
-    OPTION_ALLOW_HTTP,
-    OPTION_HTTP_PORT,
-    OPTION_HTTP_THREAD_COUNT,
-#endif  // TRITON_ENABLE_HTTP
-#if defined(TRITON_ENABLE_GRPC)
-    OPTION_ALLOW_GRPC,
-    OPTION_GRPC_PORT,
-    OPTION_GRPC_INFER_ALLOCATION_POOL_SIZE,
-    OPTION_GRPC_USE_SSL,
-    OPTION_GRPC_SERVER_CERT,
-    OPTION_GRPC_SERVER_KEY,
-    OPTION_GRPC_ROOT_CERT,
-#endif  // TRITON_ENABLE_GRPC
-#ifdef TRITON_ENABLE_METRICS
-    OPTION_ALLOW_METRICS,
-    OPTION_ALLOW_GPU_METRICS,
-    OPTION_METRICS_PORT,
-#endif  // TRITON_ENABLE_METRICS
-#ifdef TRITON_ENABLE_TRACING
-    OPTION_TRACE_FILEPATH,
-    OPTION_TRACE_LEVEL,
-    OPTION_TRACE_RATE,
-#endif  // TRITON_ENABLE_TRACING
-    OPTION_MODEL_CONTROL_MODE,
-    OPTION_POLL_REPO_SECS,
-    OPTION_STARTUP_MODEL,
-    OPTION_PINNED_MEMORY_POOL_BYTE_SIZE,
-    OPTION_CUDA_MEMORY_POOL_BYTE_SIZE,
-    OPTION_MIN_SUPPORTED_COMPUTE_CAPABILITY,
-    OPTION_EXIT_TIMEOUT_SECS,
-    OPTION_BACKEND_DIR,
-    OPTION_BUFFER_MANAGER_THREAD_COUNT,
-    OPTION_BACKEND_CONFIG
-};
-
-struct option {
-    option(const char* name, int has_arg, int* flag, int val)
-        : name_(name), has_arg_(has_arg), flag_(flag), val_(val)
-    {
-    }
-    const char* name_;
-    int has_arg_;
-    int* flag_;
-    int val_;
-};
-
-struct Option {
-    static constexpr const char* ArgNone = "";
-    static constexpr const char* ArgBool = "boolean";
-    static constexpr const char* ArgFloat = "float";
-    static constexpr const char* ArgInt = "integer";
-    static constexpr const char* ArgStr = "string";
-
-    Option(OptionId id, std::string flag, std::string arg_desc, std::string desc)
-        : id_(id), flag_(flag), arg_desc_(arg_desc), desc_(desc)
-    {
-    }
-
-    struct option GetLongOption() const
-    {   
-        struct option lo {
-            flag_.c_str(), (!arg_desc_.empty()) ? required_argument : no_argument,nullptr, id_
-        };
-        return lo;
-    }
-
-    const OptionId id_;
-    const std::string flag_;
-    const std::string arg_desc_;
-    const std::string desc_;
-};
 #ifdef __cplusplus
 }
 #endif

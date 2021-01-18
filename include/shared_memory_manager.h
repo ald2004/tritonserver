@@ -29,7 +29,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
-//#include "tritonserver.h"
+#include "tritonserver.h"
 
 #define TRITONJSON_STATUSTYPE TRITONSERVER_Error*
 #define TRITONJSON_STATUSRETURN(M) \

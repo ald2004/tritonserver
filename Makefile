@@ -9,6 +9,7 @@ ZED_CAMERA=0
 ZED_CAMERA_v2_8=0
 USE_CPP=1
 DEBUG=0
+USE_PROTOBUF=1
 
 # set GPU=1 and CUDNN=1 to speedup on GPU
 # # set CUDNN_HALF=1 to further speedup 3 x times (Mixed-precision on Tensor Cores) GPU: Volta, Xavier, Turing and higher
@@ -69,10 +70,10 @@ else
 CC=gcc
 endif
 
-CPP=g++ -std=c++11
+CPP=g++
 NVCC=nvcc
 OPTS=-Ofast
-LDFLAGS= -lm -pthread
+LDFLAGS= -lX11 -ldl -lm -pthread -I/usr/include/boost 
 COMMON= -Iinclude/ -I3rd/ 
 CFLAGS=-Wall -Wfatal-errors -Wno-unused-result -Wno-unknown-pragmas -fPIC
 
@@ -96,6 +97,12 @@ LDFLAGS+= `pkg-config --libs opencv4 2> /dev/null || pkg-config --libs opencv`
 COMMON+= `pkg-config --cflags opencv4 2> /dev/null || pkg-config --cflags opencv`
 endif
 
+ifeq ($(USE_PROTOBUF),1)
+COMMON+= -DPROTOBUF
+CFLAGS+= -DPROTOBUF
+LDFLAGS+= `pkg-config --libs protobuf`
+endif
+
 ifeq ($(OPENMP), 1)
 ifeq ($(OS),Darwin) #MAC
 CFLAGS+= -Xpreprocessor -fopenmp
@@ -106,7 +113,7 @@ LDFLAGS+= -lgomp
 endif
 
 ifeq ($(GPU), 1)
-COMMON+= -DGPU -I/usr/local/cuda/include/
+COMMON+= -DGPU -I/usr/local/cuda/include/ -I/usr/local/include
 CFLAGS+= -DGPU
 ifeq ($(OS),Darwin) #MAC
 LDFLAGS+= -L/usr/local/cuda/lib -lcuda -lcudart -lcublas -lcurand
@@ -132,9 +139,10 @@ CFLAGS+= -DCUDNN_HALF
 ARCH+= -gencode arch=compute_70,code=[sm_70,compute_70]
 endif
 
-OBJ=main.o
+OBJ=main.o options.o logging.o tritonserver.o status.o model_config.o model_config.pb.o model_repository_manager.o filesystem.o pytorchautofill.o model_config_utils.o cuda_utils.o autofill.o \
+    server.o cuda_memory_manager.o cnmem.o async_work_queue.o pinned_memory_manager.o persistent_backend_manager.o triton_backend_manager.o triton_memory_manager.o
 ifeq ($(GPU), 1)
-LDFLAGS+= -lstdc++
+#LDFLAGS+= -lstdc++
 #OBJ+=convolutional_kernels.o activation_kernels.o im2col_kernels.o col2im_kernels.o blas_kernels.o crop_layer_kernels.o dropout_layer_kernels.o maxpool_layer_kernels.o network_kernels.o avgpool_layer_kernels.o
 endif
 
@@ -149,15 +157,22 @@ CFLAGS+= -fPIC
 
 $(LIBNAMESO): $(OBJDIR) $(OBJS)
 	$(CPP) -shared -std=c++11 -fvisibility=hidden -DLIB_EXPORTS $(COMMON) $(OBJS) $(CFLAGS) -o $@ $(LDFLAGS)
+
 $(APPNAMESO): $(LIBNAMESO)
 	$(CPP) -std=c++11 $(COMMON) $(CFLAGS) -o $@ $(LDFLAGS) -L ./ -l:$(LIBNAMESO)
 endif
 
 $(EXEC): $(OBJS)
-	$(CPP) -std=c++11 $(COMMON) $^ -o $@ $(CFLAGS) 
+	$(CPP) -std=c++11 $(COMMON) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
 $(OBJDIR)%.o: %.c $(DEPS)
 	$(CC) $(COMMON) $(CFLAGS) -c $< -o $@
+
+obj/pytorch/%.o: %.cc $(DEPS)
+	        $(CC) $(COMMON) $(CFLAGS) -c $< -o $@
+
+$(OBJDIR)%.o: %.cc $(DEPS)
+	        $(CC) $(COMMON) $(CFLAGS) -c $< -o $@
 
 $(OBJDIR)%.o: %.cpp #$(DEPS)
 	$(CPP) -std=c++11 $(COMMON) $(CFLAGS) -c $< -o $@
