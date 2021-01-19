@@ -26,7 +26,7 @@
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-#include "3rd/cnmem/cnmem.h"
+#include "cnmem/cnmem.h"
 #include <cstddef>
 #include <vector>
 #include <cuda_runtime_api.h>

@@ -27,7 +27,7 @@
 
 #include <memory>
 #include <string>
-#include "triton_backend_manager.h"
+#include "backends/triton_backend_manager.h"
 #include "backend.h"
 #include "filesystem.h"
 #include "infer_request.h"

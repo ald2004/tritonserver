@@ -27,7 +27,7 @@
 
 #include <iostream>
 #include <string>
-//#include "tritonserver.h"
+#include "tritonserver.h"
 
 namespace nvidia {
     namespace inferenceserver {

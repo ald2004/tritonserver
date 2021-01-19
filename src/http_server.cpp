@@ -657,6 +657,7 @@ namespace nvidia {
 
                 triton::common::TritonJson::Value response(
                     triton::common::TritonJson::ValueType::OBJECT);
+                std::cerr << message << "00000000000000000000" << std::endl; std::flush(std::cerr);
                 response.AddStringRef("error", message, strlen(message));
 
                 triton::common::TritonJson::WriteBuffer buffer_json;
@@ -898,7 +899,7 @@ namespace nvidia {
                 }
 
                 RETURN_IF_ERR(document->Parse(json_base, length));
-
+                std::cout << "ddddddddddddddddddd" << std::endl; std::flush(std::cout);
                 return nullptr;  // success
             }
 
@@ -1918,6 +1919,10 @@ namespace nvidia {
             HTTPAPIServer::EVBufferToInput(
                 const std::string& model_name, TRITONSERVER_InferenceRequest* irequest,
                 evbuffer* input_buffer, InferRequestClass* infer_req, size_t header_length)
+        //#5  0x00007f2122cb2d28 in nvidia::inferenceserver::HTTPAPIServer::EVBufferToInput 
+        //(this=0x55c44ca22e00, model_name="densenet_onnx", irequest=0x7f20db1c1ff0, input_buffer=0x7f20359fd550, 
+        //infer_req=0x7f20dae5c9c0, header_length=200)
+        //at . / src / http_server.cpp:1944
         {
             // Extract individual input data from HTTP body and register in
             // 'irequest'. The HTTP body is not necessarily stored in contiguous
@@ -1950,8 +1955,11 @@ namespace nvidia {
                 json_header_len = header_length;
             }
 
-            RETURN_IF_ERR(EVBufferToJson(&request_json, v, &v_idx, json_header_len, n));
 
+            //std::cout << "111111111111[" <<json_header_len<<"]"<< std::endl;std::flush(std::cout);
+            //111111111111[200]
+            RETURN_IF_ERR(EVBufferToJson(&request_json, v, &v_idx, json_header_len, n));
+            std::cout << "22222222222" << std::endl; std::flush(std::cout);
             // Set InferenceRequest request_id
             triton::common::TritonJson::Value id_json;
             if (request_json.Find("id", &id_json)) {
@@ -2270,7 +2278,10 @@ namespace nvidia {
         void
             HTTPAPIServer::HandleInfer(
                 evhtp_request_t* req, const std::string& model_name,
-                const std::string& model_version_str)
+                const std::string& model_version_str="1")
+        //#6  0x00007f2122cb379e in nvidia::inferenceserver::HTTPAPIServer::HandleInfer (this=0x55c44ca22e00, req=0x7f20db0f4500, 
+        //model_name="densenet_onnx", model_version_str="") 
+        //at ./src/http_server.cpp:2350
         {
             if (req->method != htp_method_POST) {
                 evhtp_send_reply(req, EVHTP_RES_METHNALLOWED);

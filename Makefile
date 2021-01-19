@@ -4,11 +4,11 @@ CUDNN_HALF=0
 OPENCV=0
 AVX=0
 OPENMP=0
-LIBSO=0
+LIBSO=1
 ZED_CAMERA=0
 ZED_CAMERA_v2_8=0
 USE_CPP=1
-DEBUG=0
+DEBUG=1
 USE_PROTOBUF=1
 
 # set GPU=1 and CUDNN=1 to speedup on GPU
@@ -57,7 +57,7 @@ OS := $(shell uname)
 
 EXEC=tritonserver
 OBJDIR=./obj/
-VPATH=./
+VPATH=./src
 
 ifeq ($(LIBSO), 1)
 LIBNAMESO=libBOE_trison_server.so
@@ -73,12 +73,13 @@ endif
 CPP=g++
 NVCC=nvcc
 OPTS=-Ofast
-LDFLAGS= -lX11 -ldl -lm -pthread -I/usr/include/boost 
-COMMON= -Iinclude/ -I3rd/ 
+LDFLAGS= -ldl -lrt -lre2 -lb64 -ltritonserver -lm -pthread -levhtp -levent 
+#LDFLAGS= -lX11 -ldl -lm -pthread -I/usr/include/boost 
+COMMON= -Iinclude/ -I3rd/ -I3rd/libevent/include -I3rd/libevhtp/include -I/usr/include/boost -L/opt/work/boe/tritonserver/3rd/libevhtp/lib -L/opt/work/triton-server/build/libevent/install/lib
 CFLAGS=-Wall -Wfatal-errors -Wno-unused-result -Wno-unknown-pragmas -fPIC
 
 ifeq ($(DEBUG), 1)
-#OPTS= -O0 -g
+OPTS= -O0 -g
 #OPTS= -Og -g
 COMMON+= -DDEBUG
 CFLAGS+= -DDEBUG
@@ -139,8 +140,10 @@ CFLAGS+= -DCUDNN_HALF
 ARCH+= -gencode arch=compute_70,code=[sm_70,compute_70]
 endif
 
-OBJ=main.o options.o logging.o tritonserver.o status.o model_config.o model_config.pb.o model_repository_manager.o filesystem.o pytorchautofill.o model_config_utils.o cuda_utils.o autofill.o \
-    server.o cuda_memory_manager.o cnmem.o async_work_queue.o pinned_memory_manager.o persistent_backend_manager.o triton_backend_manager.o triton_memory_manager.o
+OBJ=main.o logging.o tritonserver.o status.o model_config.o model_config.pb.o model_repository_manager.o filesystem.o pytorchautofill.o model_config_utils.o cuda_utils.o autofill.o \
+    server.o cuda_memory_manager.o cnmem.o async_work_queue.o pinned_memory_manager.o persistent_backend_manager.o triton_backend_manager.o triton_memory_manager.o \
+    table_printer.o infer_request.o memory.o dynamic_batch_scheduler.o sequence_batch_scheduler.o scheduler_utils.o infer_reponse.o backend.o label_provider.o triton_model.o \
+    triton_backend_config.o triton_model_instance.o infer_parameter.o http_server.o shared_memory_manager.o common.o classification.o onnxautofill.o
 ifeq ($(GPU), 1)
 #LDFLAGS+= -lstdc++
 #OBJ+=convolutional_kernels.o activation_kernels.o im2col_kernels.o col2im_kernels.o blas_kernels.o crop_layer_kernels.o dropout_layer_kernels.o maxpool_layer_kernels.o network_kernels.o avgpool_layer_kernels.o
@@ -150,7 +153,7 @@ OBJS = $(addprefix $(OBJDIR), $(OBJ))
 #DEPS = $(wildcard src/*.h) Makefile include/net.h
 
 #all: $(OBJDIR) $(EXEC) $(LIBNAMESO)
-all: $(OBJDIR) backup results $(EXEC) $(LIBNAMESO) $(APPNAMESO)
+all: $(OBJDIR) backup setchmod results $(LIBNAMESO) $(APPNAMESO)
 
 ifeq ($(LIBSO), 1)
 CFLAGS+= -fPIC
@@ -193,4 +196,4 @@ setchmod:
 .PHONY: clean
 
 clean:
-	rm -rf $(OBJS) $(EXEC) $(LIBNAMESO) $(APPNAMESO)
+	rm -rf ./core $(OBJS) $(LIBNAMESO) $(APPNAMESO)

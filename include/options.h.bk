@@ -1,17 +1,22 @@
 #pragma once
 
 #include <algorithm>
-
+#include <condition_variable>
 #include "tritonserver.h"
 #include "http_server.h"
 #include "logging.h"
 #include "common.h"
+#include "server.h"
 
 int optind = 1;
 const char* optarg = nullptr;
-// Interval, in seconds, when the model repository is polled for changes.
+//// Interval, in seconds, when the model repository is polled for changes.
 int32_t repository_poll_secs_ = 15;
-
+// Exit mutex and cv used to signal the main thread that it should
+// close the server and exit.
+volatile bool exiting_ = false;
+std::mutex exit_mu_;
+std::condition_variable exit_cv_;
 std::string server_id("triton");
 std::set<std::string> model_repository_paths;
 bool exit_on_error = true;
@@ -30,6 +35,30 @@ std::vector<std::tuple<std::string, std::string, std::string>>backend_config_set
 #if defined(TRITON_ENABLE_HTTP)
 // The number of threads to initialize for the HTTP front-end.
 int http_thread_cnt_ = 8;
+std::unique_ptr<nvidia::inferenceserver::HTTPServer> http_service_;
+bool allow_http_ = true;
+int32_t http_port_ = 8000;
+TRITONSERVER_Error* StartHttpService(
+    std::unique_ptr<nvidia::inferenceserver::HTTPServer>* service,
+    const std::shared_ptr<TRITONSERVER_Server>& server,
+    nvidia::inferenceserver::TraceManager* trace_manager,
+    const std::shared_ptr<nvidia::inferenceserver::SharedMemoryManager>&
+    shm_manager)
+{
+    TRITONSERVER_Error* err =
+        nvidia::inferenceserver::HTTPServer::CreateAPIServer(
+            server, trace_manager, shm_manager, http_port_, http_thread_cnt_,
+            service);
+    if (err == nullptr) {
+        err = (*service)->Start();
+    }
+
+    if (err != nullptr) {
+        service->reset();
+    }
+
+    return err;
+}
 #endif  // TRITON_ENABLE_HTTP
 
 
@@ -489,10 +518,6 @@ bool CheckPortCollision()
 
     return false;
 }
-
-
-
-
 bool Parse(TRITONSERVER_ServerOptions** server_options, int argc, char** argv)
 {
     double min_supported_compute_capability = TRITON_MIN_COMPUTE_CAPABILITY;
@@ -816,4 +841,145 @@ bool Parse(TRITONSERVER_ServerOptions** server_options, int argc, char** argv)
     }
 
     return true;
+}
+
+
+bool StartEndpoints(
+    const std::shared_ptr<TRITONSERVER_Server>& server,
+    nvidia::inferenceserver::TraceManager* trace_manager,
+    const std::shared_ptr<nvidia::inferenceserver::SharedMemoryManager>&
+    shm_manager)
+{
+#ifdef TRITON_ENABLE_GRPC
+    // Enable GRPC endpoints if requested...
+    if (allow_grpc_ && (grpc_port_ != -1)) {
+        TRITONSERVER_Error* err =
+            StartGrpcService(&grpc_service_, server, trace_manager, shm_manager);
+        if (err != nullptr) {
+            LOG_TRITONSERVER_ERROR(err, "failed to start GRPC service");
+            return false;
+        }
+    }
+#endif  // TRITON_ENABLE_GRPC
+
+#ifdef TRITON_ENABLE_HTTP
+    // Enable HTTP endpoints if requested...
+    if (allow_http_ && (http_port_ != -1)) {
+        TRITONSERVER_Error* err =
+            StartHttpService(&http_service_, server, trace_manager, shm_manager);
+        if (err != nullptr) {
+            LOG_TRITONSERVER_ERROR(err, "failed to start HTTP service");
+            return false;
+        }
+    }
+#endif  // TRITON_ENABLE_HTTP
+
+#ifdef TRITON_ENABLE_METRICS
+    // Enable metrics endpoint if requested...
+    if (metrics_port_ != -1) {
+        TRITONSERVER_Error* err = StartMetricsService(&metrics_service_, server);
+        if (err != nullptr) {
+            LOG_TRITONSERVER_ERROR(err, "failed to start Metrics service");
+            return false;
+        }
+    }
+#endif  // TRITON_ENABLE_METRICS
+
+    return true;
+}
+
+bool StopEndpoints()
+{
+    bool ret = true;
+
+#ifdef TRITON_ENABLE_HTTP
+    if (http_service_) {
+        TRITONSERVER_Error* err = http_service_->Stop();
+        if (err != nullptr) {
+            LOG_TRITONSERVER_ERROR(err, "failed to stop HTTP service");
+            ret = false;
+        }
+
+        http_service_.reset();
+    }
+#endif  // TRITON_ENABLE_HTTP
+
+#ifdef TRITON_ENABLE_GRPC
+    if (grpc_service_) {
+        TRITONSERVER_Error* err = grpc_service_->Stop();
+        if (err != nullptr) {
+            LOG_TRITONSERVER_ERROR(err, "failed to stop GRPC service");
+            ret = false;
+        }
+
+        grpc_service_.reset();
+    }
+#endif  // TRITON_ENABLE_GRPC
+
+#ifdef TRITON_ENABLE_METRICS
+    if (metrics_service_) {
+        TRITONSERVER_Error* err = metrics_service_->Stop();
+        if (err != nullptr) {
+            LOG_TRITONSERVER_ERROR(err, "failed to stop Metrics service");
+            ret = false;
+        }
+
+        metrics_service_.reset();
+    }
+#endif  // TRITON_ENABLE_METRICS
+
+    return ret;
+}
+
+bool StartTracing(nvidia::inferenceserver::TraceManager** trace_manager)
+{
+    *trace_manager = nullptr;
+
+#ifdef TRITON_ENABLE_TRACING
+    TRITONSERVER_Error* err = nullptr;
+
+    // Configure tracing if host is specified.
+    if (trace_level_ != TRITONSERVER_TRACE_LEVEL_DISABLED) {
+        err = nvidia::inferenceserver::TraceManager::Create(
+            trace_manager, trace_level_, trace_rate_, trace_filepath_);
+    }
+
+    if (err != nullptr) {
+        LOG_TRITONSERVER_ERROR(err, "failed to configure tracing");
+        *trace_manager = nullptr;
+        return false;
+    }
+#endif  // TRITON_ENABLE_TRACING
+
+    return true;
+}
+
+bool StopTracing(nvidia::inferenceserver::TraceManager** trace_manager)
+{
+#ifdef TRITON_ENABLE_TRACING
+    // We assume that at this point Triton has been stopped gracefully,
+    // so can delete the trace manager to finalize the output.
+    delete (*trace_manager);
+    *trace_manager = nullptr;
+#endif  // TRITON_ENABLE_TRACING
+
+    return true;
+}
+
+void SignalHandler(int signum)
+{
+    // Don't need a mutex here since signals should be disabled while in
+    // the handler.
+    std::cout << "Interrupt signal (" << signum << ") received." << std::endl;
+
+    // Do nothing if already exiting...
+    if (exiting_)
+        return;
+
+    {
+        std::unique_lock<std::mutex> lock(exit_mu_);
+        exiting_ = true;
+    }
+
+    exit_cv_.notify_all();
 }

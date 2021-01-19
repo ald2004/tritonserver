@@ -33,7 +33,7 @@
 #include "src/backends/tensorrt/autofill.h"
 #endif  // TRITON_ENABLE_TENSORRT
 #ifdef TRITON_ENABLE_ONNXRUNTIME
-#include "src/backends/onnx/autofill.h"
+#include "backends/onnx/autofill.h"
 #endif  // TRITON_ENABLE_ONNXRUNTIME
 #ifdef TRITON_ENABLE_PYTORCH
 #include "backends/pytorchautofill.h"

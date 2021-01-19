@@ -50,6 +50,7 @@
 //#define TRITON_ENABLE_TENSORRT
 //#ifdef TRITON_ENABLE_TRACING
 #define TRITON_ENABLE_PYTORCH
+#define TRITON_ENABLE_ONNXRUNTIME
 
 //std::string trace_filepath_;
 //TRITONSERVER_InferenceTraceLevel trace_level_ = TRITONSERVER_TRACE_LEVEL_DISABLED;
