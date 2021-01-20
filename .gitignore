@@ -32,3 +32,5 @@
 *.app
 
 3rd/*.*
+onnxruntime_backend
+model

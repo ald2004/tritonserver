@@ -29,8 +29,8 @@
 #include <event2/buffer.h>
 #include <evhtp/evhtp.h>
 #include <unordered_map>
-//#include <google/protobuf/text_format.h>
-//#include <google/protobuf/util/json_util.h>
+#include <google/protobuf/text_format.h>
+#include <google/protobuf/util/json_util.h>
 #include <re2/re2.h>
 #include <algorithm>
 #include <list>
@@ -655,15 +655,21 @@ namespace nvidia {
             {
                 const char* message = TRITONSERVER_ErrorMessage(err);
 
-                triton::common::TritonJson::Value response(
-                    triton::common::TritonJson::ValueType::OBJECT);
-                std::cerr << message << "00000000000000000000" << std::endl; std::flush(std::cerr);
-                response.AddStringRef("error", message, strlen(message));
+                triton::common::TritonJson::Value response(triton::common::TritonJson::ValueType::OBJECT);
+                //std::cerr << std::endl << "00000000000000000000" << std::endl << message << std::endl << "00000000000000000000" << std::endl;std::flush(std::cerr);
+                //expected 1 inputs but got 0 inputs for model 'densenet_onnx'
+                //response.AddStringRef("error", message, strlen(message));
+                //triton::common::TritonJson::WriteBuffer buffer_json;
+                //response.Write(&buffer_json);
 
-                triton::common::TritonJson::WriteBuffer buffer_json;
-                response.Write(&buffer_json);
-
-                evbuffer_add(buffer, buffer_json.Base(), buffer_json.Size());
+                rapidjson::Document document;
+                document.Parse(message);
+                std::string messageall = "{\"error\":\"expected 1 inputs but got 0 inputs for model 'densenet_onnx'\"}";
+                rapidjson::StringBuffer bufferx;
+                rapidjson::Writer<rapidjson::StringBuffer> writer(bufferx);
+                document.Accept(writer);
+                evbuffer_add(buffer, messageall.c_str(), messageall.size());
+                //evbuffer_add(buffer, buffer_json.Base(), buffer_json.Size());
             }
 
             TRITONSERVER_Error*
@@ -897,12 +903,75 @@ namespace nvidia {
                             std::to_string(remaining_length) + " more bytes")
                         .c_str());
                 }
-
+        
                 RETURN_IF_ERR(document->Parse(json_base, length));
-                std::cout << "ddddddddddddddddddd" << std::endl; std::flush(std::cout);
-                return nullptr;  // success
             }
+            std::string  evbuffertojson(
+                     evbuffer_iovec* v, int* v_idx,
+                    const size_t length, int n)
+            {
+                size_t offset = 0, remaining_length = length;
+                char* json_base;
+                std::vector<char> json_buffer;
 
+                // No need to memcpy when number of iovecs is 1
+                if ((n > 0) and (v[0].iov_len >= remaining_length)) {
+                    json_base = static_cast<char*>(v[0].iov_base);
+                    if (v[0].iov_len > remaining_length) {
+                        v[0].iov_base = static_cast<void*>(json_base + remaining_length);
+                        v[0].iov_len -= remaining_length;
+                        remaining_length = 0;
+                    }
+                    else if (v[0].iov_len == remaining_length) {
+                        remaining_length = 0;
+                        *v_idx += 1;
+                    }
+                }
+                else {
+                    json_buffer.resize(length);
+                    json_base = json_buffer.data();
+                    while ((remaining_length > 0) && (*v_idx < n)) {
+                        char* base = static_cast<char*>(v[*v_idx].iov_base);
+                        size_t base_size;
+                        if (v[*v_idx].iov_len > remaining_length) {
+                            base_size = remaining_length;
+                            v[*v_idx].iov_base = static_cast<void*>(base + remaining_length);
+                            v[*v_idx].iov_len -= remaining_length;
+                            remaining_length = 0;
+                        }
+                        else {
+                            base_size = v[*v_idx].iov_len;
+                            remaining_length -= v[*v_idx].iov_len;
+                            *v_idx += 1;
+                        }
+
+                        memcpy(json_base + offset, base, base_size);
+                        offset += base_size;
+                    }
+                }
+
+                if (remaining_length != 0) {
+                    return 
+                        TRITONSERVER_ERROR_INVALID_ARG,
+                        std::string(
+                            "unexpected size for request JSON, expecting " +
+                            std::to_string(remaining_length) + " more bytes")
+                        .c_str();
+                }
+
+                //rapidjson::Document d;
+                //d.Parse(json_base);
+                //std::cout << "ccccccccccccccc" << std::endl; std::flush(std::cout);
+                //TRITONSERVER_Error* err__ = document->Parse(json_base, length);
+                /*if (err__ != nullptr) {
+                    std::cout << "eeeeeeeeeee" << std::endl; std::flush(std::cout);
+                    return err__;
+                }*/
+                //RETURN_IF_ERR(document->Parse(json_base, length));
+                //std::cout << "ddddddddddddddddddd" << std::endl; std::flush(std::cout);
+                std::string xx(json_base);
+                return xx;  // success
+            }
         }  // namespace
 
         // Handle HTTP requests to inference server APIs
@@ -1237,7 +1306,7 @@ namespace nvidia {
         void
             HTTPAPIServer::Handle(evhtp_request_t* req)
         {
-            LOG_VERBOSE(1) << "HTTP request: " << req->method << " "
+            LOG_VERBOSE(0) << "HTTP request: " << req->method << " "
                 << req->uri->path->full;
 
             if (std::string(req->uri->path->full) == "/v2/models/stats") {
@@ -1257,6 +1326,9 @@ namespace nvidia {
                 }
                 else if (kind == "infer") {
                     // model infer
+                    //std::cout << "model infer!!!!!!!!!" << std::endl; std::flush(std::cout);
+                    //std::cout << model_name <<"-------"<< version << std::endl; std::flush(std::cout);
+                    //model infer!!!!!!!!!1  densenet_onnx-------1
                     HandleInfer(req, model_name, version);
                     return;
                 }
@@ -1919,17 +1991,9 @@ namespace nvidia {
             HTTPAPIServer::EVBufferToInput(
                 const std::string& model_name, TRITONSERVER_InferenceRequest* irequest,
                 evbuffer* input_buffer, InferRequestClass* infer_req, size_t header_length)
-        //#5  0x00007f2122cb2d28 in nvidia::inferenceserver::HTTPAPIServer::EVBufferToInput 
-        //(this=0x55c44ca22e00, model_name="densenet_onnx", irequest=0x7f20db1c1ff0, input_buffer=0x7f20359fd550, 
-        //infer_req=0x7f20dae5c9c0, header_length=200)
-        //at . / src / http_server.cpp:1944
+        
         {
-            // Extract individual input data from HTTP body and register in
-            // 'irequest'. The HTTP body is not necessarily stored in contiguous
-            // memory.
-            //
-            // Get the addr and size of each chunk of memory holding the HTTP
-            // body.
+            
             struct evbuffer_iovec* v = nullptr;
             int v_idx = 0;
 
@@ -1943,10 +2007,9 @@ namespace nvidia {
                         "unexpected error getting input buffers");
                 }
             }
-
             // Extract just the json header from the HTTP body. 'header_length'
             // == 0 means that the entire HTTP body should be parsed as json.
-            triton::common::TritonJson::Value request_json;
+            //triton::common::TritonJson::Value request_json;
             int json_header_len = 0;
             if (header_length == 0) {
                 json_header_len = evbuffer_get_length(input_buffer);
@@ -1958,100 +2021,99 @@ namespace nvidia {
 
             //std::cout << "111111111111[" <<json_header_len<<"]"<< std::endl;std::flush(std::cout);
             //111111111111[200]
-            RETURN_IF_ERR(EVBufferToJson(&request_json, v, &v_idx, json_header_len, n));
-            std::cout << "22222222222" << std::endl; std::flush(std::cout);
+            //RETURN_IF_ERR(EVBufferToJson(&request_json, v, &v_idx, json_header_len, n));
+            std::string requestjson = evbuffertojson( v, &v_idx, json_header_len, n);
+            //std::cout << "22222222222" << std::endl<< requestjson<<std::endl; std::flush(std::cout);
+            /*{
+	            "id": "1",
+	            "inputs": [{
+		            "name": "data_0",
+		            "shape": [3, 224, 224],
+		            "datatype": "FP32",
+		            "parameters": {
+			            "binary_data_size": 602112
+		            }
+	            }],
+	            "outputs": [{
+		            "name": "fc6_1",
+		            "parameters": {
+			            "classification": 1,
+			            "binary_data": true
+		            }
+	            }]
+            }*/
             // Set InferenceRequest request_id
-            triton::common::TritonJson::Value id_json;
-            if (request_json.Find("id", &id_json)) {
+            //triton::common::TritonJson::Value id_json;
+
+            rapidjson::Document dd;
+            dd.Parse(requestjson.c_str());
+            /*rapidjson::StringBuffer buffer;
+            rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
+            dd.Accept(writer);*/
+            //std::cout << buffer.GetString() << std::endl;
+            /*if (request_json.Find("id", &id_json)) {
                 const char* id;
                 size_t id_len;
                 RETURN_MSG_IF_ERR(id_json.AsString(&id, &id_len), "Unable to parse 'id'");
                 RETURN_IF_ERR(TRITONSERVER_InferenceRequestSetId(irequest, id));
-            }
-
+            }*/
             // The default setting for returned outputs (JSON or BINARY). This
             // is needed for the case when outputs are not explicitly specified.
-            AllocPayload::OutputInfo::Kind default_output_kind =
-                AllocPayload::OutputInfo::JSON;
+            AllocPayload::OutputInfo::Kind default_output_kind = AllocPayload::OutputInfo::JSON;
 
             // Set sequence correlation ID and flags if any
-            triton::common::TritonJson::Value params_json;
-            if (request_json.Find("parameters", &params_json)) {
-                triton::common::TritonJson::Value seq_json;
-                if (params_json.Find("sequence_id", &seq_json)) {
-                    uint64_t seq_id;
-                    RETURN_MSG_IF_ERR(
-                        seq_json.AsUInt(&seq_id), "Unable to parse 'sequence_id'");
-                    RETURN_IF_ERR(
-                        TRITONSERVER_InferenceRequestSetCorrelationId(irequest, seq_id));
-                }
+            
 
-                uint32_t flags = 0;
 
-                {
-                    triton::common::TritonJson::Value start_json;
-                    if (params_json.Find("sequence_start", &start_json)) {
-                        bool start;
-                        RETURN_MSG_IF_ERR(
-                            start_json.AsBool(&start), "Unable to parse 'sequence_start'");
-                        if (start) {
-                            flags |= TRITONSERVER_REQUEST_FLAG_SEQUENCE_START;
-                        }
+            if (dd.IsObject() && dd.HasMember("inputs")) {
+                rapidjson::Value& d_inputs = dd["inputs"];
+                if (d_inputs.IsArray()&& d_inputs.Size() > 0){
+                    rapidjson::Value& d_params = d_inputs[0]["parameters"];
+
+                    // if has sequence_id
+                    if (d_params.IsObject() && d_params.HasMember("sequence_id")) {
+                        rapidjson::Value& d_seq = d_params["sequence_id"];
+                        uint64_t seq_id = d_seq.GetUint64();
+                        RETURN_IF_ERR(TRITONSERVER_InferenceRequestSetCorrelationId(irequest, seq_id));
+                    }
+                    
+                    // if has sequence_start and sequence_end
+                    uint32_t flags = 0;
+                    {
+                        //todo ...
                     }
 
-                    triton::common::TritonJson::Value end_json;
-                    if (params_json.Find("sequence_end", &end_json)) {
-                        bool end;
-                        RETURN_MSG_IF_ERR(
-                            end_json.AsBool(&end), "Unable to parse 'sequence_end'");
-                        if (end) {
-                            flags |= TRITONSERVER_REQUEST_FLAG_SEQUENCE_END;
-                        }
+                    
+                    RETURN_IF_ERR(TRITONSERVER_InferenceRequestSetFlags(irequest, flags));
+
+                    // if has priority
+                    {
+                        // todo 
                     }
+
+                    
+                    // if has timeout
+                    {
+                        // todo 
+                    }
+
+                    // if has binary_data_output
+                    {
+                        //todo
+                    }
+                    //input
+                    for (size_t i = 0; i < d_inputs.Size(); ++i){
+                        rapidjson::Value& request_input= d_inputs[i];
+                        //RETURN_IF_ERR(ValidateInputContentType(request_input));
+                    }
+                    std::cout << "444444444444" << std::endl; std::flush(std::cout);
                 }
 
-                RETURN_IF_ERR(TRITONSERVER_InferenceRequestSetFlags(irequest, flags));
-
-                {
-                    triton::common::TritonJson::Value priority_json;
-                    if (params_json.Find("priority", &priority_json)) {
-                        uint64_t p;
-                        RETURN_MSG_IF_ERR(
-                            priority_json.AsUInt(&p), "Unable to parse 'priority'");
-                        RETURN_IF_ERR(TRITONSERVER_InferenceRequestSetPriority(irequest, p));
-                    }
-                }
-
-                {
-                    triton::common::TritonJson::Value timeout_json;
-                    if (params_json.Find("timeout", &timeout_json)) {
-                        uint64_t t;
-                        RETURN_MSG_IF_ERR(timeout_json.AsUInt(&t), "Unable to parse 'timeout'");
-                        RETURN_IF_ERR(
-                            TRITONSERVER_InferenceRequestSetTimeoutMicroseconds(irequest, t));
-                    }
-                }
-
-                {
-                    triton::common::TritonJson::Value bdo_json;
-                    if (params_json.Find("binary_data_output", &bdo_json)) {
-                        bool bdo;
-                        RETURN_MSG_IF_ERR(
-                            bdo_json.AsBool(&bdo), "Unable to parse 'binary_data_output'");
-                        default_output_kind = (bdo) ? AllocPayload::OutputInfo::BINARY
-                            : AllocPayload::OutputInfo::JSON;
-                    }
-                }
+                
+                
             }
 
-            // Get the byte-size for each input and from that get the blocks
-            // holding the data for that input
-            triton::common::TritonJson::Value inputs_json;
-            RETURN_MSG_IF_ERR(
-                request_json.MemberAsArray("inputs", &inputs_json),
-                "Unable to parse 'inputs'");
-
-            for (size_t i = 0; i < inputs_json.ArraySize(); i++) {
+            /*for (size_t i = 0; i < inputs_json.ArraySize(); i++) {
                 triton::common::TritonJson::Value request_input;
                 RETURN_IF_ERR(inputs_json.At(i, &request_input));
                 RETURN_IF_ERR(ValidateInputContentType(request_input));
@@ -2091,8 +2153,8 @@ namespace nvidia {
 
                 if ((byte_size == 0) && binary_input) {
                     RETURN_IF_ERR(TRITONSERVER_InferenceRequestAppendInputData(
-                        irequest, input_name, nullptr, 0 /* byte_size */,
-                        TRITONSERVER_MEMORY_CPU, 0 /* memory_type_id */));
+                        irequest, input_name, nullptr, 0 ,
+                        TRITONSERVER_MEMORY_CPU, 0 ));
                 }
                 else if (binary_input) {
                     if (header_length == 0) {
@@ -2121,7 +2183,7 @@ namespace nvidia {
 
                         RETURN_IF_ERR(TRITONSERVER_InferenceRequestAppendInputData(
                             irequest, input_name, base, base_size, TRITONSERVER_MEMORY_CPU,
-                            0 /* memory_type_id */));
+                            0 ));
                     }
 
                     if (byte_size != 0) {
@@ -2158,8 +2220,8 @@ namespace nvidia {
                         // shouldn't we just return an error here?
                         if (element_cnt == 0) {
                             RETURN_IF_ERR(TRITONSERVER_InferenceRequestAppendInputData(
-                                irequest, input_name, nullptr, 0 /* byte_size */,
-                                TRITONSERVER_MEMORY_CPU, 0 /* memory_type_id */));
+                                irequest, input_name, nullptr, 0 ,
+                                TRITONSERVER_MEMORY_CPU, 0 );
                         }
                         else {
                             // JSON... presence of "data" already validated but still
@@ -2201,75 +2263,76 @@ namespace nvidia {
 
                             RETURN_IF_ERR(TRITONSERVER_InferenceRequestAppendInputData(
                                 irequest, input_name, &serialized[0], serialized.size(),
-                                TRITONSERVER_MEMORY_CPU, 0 /* memory_type_id */));
+                                TRITONSERVER_MEMORY_CPU, 0 ));
                         }
                     } // used shared memory 
                 }
-            }
+            }*/
+            std::cout << "666666666666666666666" << std::endl; std::flush(std::cout);
 
-            if (v_idx != n) {
+            /*if (v_idx != n) {
                 return TRITONSERVER_ErrorNew(
                     TRITONSERVER_ERROR_INVALID_ARG,
                     std::string(
                         "unexpected additional input data for model '" + model_name + "'")
                     .c_str());
-            }
-
+            }*/
+            std::cout << "77777777777777777777777777" << std::endl; std::flush(std::cout);
             // outputs is optional
-            if (request_json.Find("outputs")) {
-                triton::common::TritonJson::Value outputs_json;
-                RETURN_MSG_IF_ERR(
-                    request_json.MemberAsArray("outputs", &outputs_json),
-                    "Unable to parse 'outputs'");
-                for (size_t i = 0; i < outputs_json.ArraySize(); i++) {
-                    triton::common::TritonJson::Value request_output;
-                    RETURN_IF_ERR(outputs_json.At(i, &request_output));
-                    RETURN_IF_ERR(ValidateOutputParameter(request_output));
+            //if (request_json.Find("outputs")) {
+            //    triton::common::TritonJson::Value outputs_json;
+            //    RETURN_MSG_IF_ERR(
+            //        request_json.MemberAsArray("outputs", &outputs_json),
+            //        "Unable to parse 'outputs'");
+            //    for (size_t i = 0; i < outputs_json.ArraySize(); i++) {
+            //        triton::common::TritonJson::Value request_output;
+            //        RETURN_IF_ERR(outputs_json.At(i, &request_output));
+            //        RETURN_IF_ERR(ValidateOutputParameter(request_output));
 
-                    const char* output_name;
-                    size_t output_name_len;
-                    RETURN_MSG_IF_ERR(
-                        request_output.MemberAsString("name", &output_name, &output_name_len),
-                        "Unable to parse 'name'");
-                    RETURN_IF_ERR(TRITONSERVER_InferenceRequestAddRequestedOutput(
-                        irequest, output_name));
+            //        const char* output_name;
+            //        size_t output_name_len;
+            //        RETURN_MSG_IF_ERR(
+            //            request_output.MemberAsString("name", &output_name, &output_name_len),
+            //            "Unable to parse 'name'");
+            //        RETURN_IF_ERR(TRITONSERVER_InferenceRequestAddRequestedOutput(
+            //            irequest, output_name));
 
-                    uint64_t class_size;
-                    RETURN_IF_ERR(CheckClassificationOutput(request_output, &class_size));
+            //        uint64_t class_size;
+            //        RETURN_IF_ERR(CheckClassificationOutput(request_output, &class_size));
 
-                    bool use_shm;
-                    uint64_t offset, byte_size;
-                    const char* shm_region;
-                    RETURN_IF_ERR(CheckSharedMemoryData(
-                        request_output, &use_shm, &shm_region, &offset, &byte_size));
+            //        bool use_shm;
+            //        uint64_t offset, byte_size;
+            //        const char* shm_region;
+            //        RETURN_IF_ERR(CheckSharedMemoryData(
+            //            request_output, &use_shm, &shm_region, &offset, &byte_size));
 
-                    // ValidateOutputParameter ensures that both shm and
-                    // classification cannot be true.
-                    if (use_shm) {
-                        void* base;
-                        TRITONSERVER_MemoryType memory_type;
-                        int64_t memory_type_id;
-                        RETURN_IF_ERR(shm_manager_->GetMemoryInfo(
-                            shm_region, offset, &base, &memory_type, &memory_type_id));
+            //        // ValidateOutputParameter ensures that both shm and
+            //        // classification cannot be true.
+            //        if (use_shm) {
+            //            void* base;
+            //            TRITONSERVER_MemoryType memory_type;
+            //            int64_t memory_type_id;
+            //            RETURN_IF_ERR(shm_manager_->GetMemoryInfo(
+            //                shm_region, offset, &base, &memory_type, &memory_type_id));
 
-                        infer_req->alloc_payload_.output_map_.emplace(
-                            std::piecewise_construct, std::forward_as_tuple(output_name),
-                            std::forward_as_tuple(new AllocPayload::OutputInfo(
-                                base, byte_size, memory_type, memory_type_id)));
-                    }
-                    else {
-                        bool use_binary;
-                        RETURN_IF_ERR(CheckBinaryOutputData(request_output, &use_binary));
-                        infer_req->alloc_payload_.output_map_.emplace(
-                            std::piecewise_construct, std::forward_as_tuple(output_name),
-                            std::forward_as_tuple(new AllocPayload::OutputInfo(
-                                use_binary ? AllocPayload::OutputInfo::BINARY
-                                : AllocPayload::OutputInfo::JSON,
-                                class_size)));
-                    }
-                }
-            }
-
+            //            infer_req->alloc_payload_.output_map_.emplace(
+            //                std::piecewise_construct, std::forward_as_tuple(output_name),
+            //                std::forward_as_tuple(new AllocPayload::OutputInfo(
+            //                    base, byte_size, memory_type, memory_type_id)));
+            //        }
+            //        else {
+            //            bool use_binary;
+            //            RETURN_IF_ERR(CheckBinaryOutputData(request_output, &use_binary));
+            //            infer_req->alloc_payload_.output_map_.emplace(
+            //                std::piecewise_construct, std::forward_as_tuple(output_name),
+            //                std::forward_as_tuple(new AllocPayload::OutputInfo(
+            //                    use_binary ? AllocPayload::OutputInfo::BINARY
+            //                    : AllocPayload::OutputInfo::JSON,
+            //                    class_size)));
+            //        }
+            //    }
+            //}
+            std::cout << "8888888888888888888888888" << std::endl; std::flush(std::cout);
             infer_req->alloc_payload_.default_output_kind_ = default_output_kind;
 
             return nullptr;  // success
@@ -2280,7 +2343,7 @@ namespace nvidia {
                 evhtp_request_t* req, const std::string& model_name,
                 const std::string& model_version_str="1")
         //#6  0x00007f2122cb379e in nvidia::inferenceserver::HTTPAPIServer::HandleInfer (this=0x55c44ca22e00, req=0x7f20db0f4500, 
-        //model_name="densenet_onnx", model_version_str="") 
+        //model_name="densenet_onnx", model_version_str="1") 
         //at ./src/http_server.cpp:2350
         {
             if (req->method != htp_method_POST) {
@@ -2301,8 +2364,7 @@ namespace nvidia {
             if (err == nullptr) {
                 uint32_t txn_flags;
                 err = TRITONSERVER_ServerModelTransactionProperties(
-                    server_.get(), model_name.c_str(), requested_model_version, &txn_flags,
-                    nullptr /* voidp */);
+                    server_.get(), model_name.c_str(), requested_model_version, &txn_flags,nullptr /* voidp */);
                 if ((err == nullptr) && (txn_flags & TRITONSERVER_TXN_DECOUPLED) != 0) {
                     err = TRITONSERVER_ErrorNew(
                         TRITONSERVER_ERROR_UNSUPPORTED,
@@ -2340,7 +2402,7 @@ namespace nvidia {
                 err = TRITONSERVER_InferenceRequestNew(
                     &irequest, server_.get(), model_name.c_str(), requested_model_version);
             }
-
+            
             if (err == nullptr) {
                 connection_paused = true;
                 std::unique_ptr<InferRequestClass> infer_request(
@@ -2349,7 +2411,7 @@ namespace nvidia {
                 infer_request->trace_manager_ = trace_manager_;
                 infer_request->trace_id_ = trace_id;
 #endif  // TRITON_ENABLE_TRACING
-
+                
                 // Find Inference-Header-Content-Length in header. If missing set to 0
                 size_t header_length = 0;
                 const char* header_length_c_str =
@@ -2357,10 +2419,10 @@ namespace nvidia {
                 if (header_length_c_str != NULL) {
                     header_length = std::atoi(header_length_c_str);
                 }
-
-                err = EVBufferToInput(
-                    model_name, irequest, req->buffer_in, infer_request.get(),
-                    header_length);
+                
+                //err = EVBufferToInput(model_name, irequest, req->buffer_in, infer_request.get(),header_length);
+                err = nullptr;
+                std::cout << "gggggggggggggggg" << std::endl; std::flush(std::cout);
                 if (err == nullptr) {
                     err = TRITONSERVER_InferenceRequestSetReleaseCallback(
                         irequest, InferRequestClass::InferRequestComplete,
@@ -2380,9 +2442,10 @@ namespace nvidia {
                     }
                 }
             }
-
             if (err != nullptr) {
-                LOG_VERBOSE(1) << "Infer failed: " << TRITONSERVER_ErrorMessage(err);
+                LOG_VERBOSE(0) << "Infer failed: " << TRITONSERVER_ErrorMessage(err);
+
+                /*+++++++++++++++++++++++++++++++++++++++++++*/
                 EVBufferAddErrorJson(req->buffer_out, err);
                 evhtp_send_reply(req, EVHTP_RES_BADREQ);
                 if (connection_paused) {
@@ -2393,6 +2456,7 @@ namespace nvidia {
                 LOG_TRITONSERVER_ERROR(
                     TRITONSERVER_InferenceRequestDelete(irequest),
                     "deleting HTTP/REST inference request");
+                
             }
         }
 

@@ -59,7 +59,7 @@ namespace triton {
         //
         class TritonJson {
         public:
-            class Value;
+            //class Value;
             enum class ValueType {
                 OBJECT = rapidjson::kObjectType,
                 ARRAY = rapidjson::kArrayType,
@@ -201,10 +201,11 @@ namespace triton {
                             std::string(GetParseError_En(document_.GetParseError())) + " at " +
                             std::to_string(document_.GetErrorOffset())));
                     }
-                    std::cout << "bbbbbbbbbbbbb" << std::endl; std::flush(std::cout);
+                    //std::cout << "bbbbbbbbbbbbb" << std::endl; std::flush(std::cout);
                     allocator_ = &document_.GetAllocator();
-                    std::cout << "aaaaaaaaaaaaaaaaaaa" << std::endl; std::flush(std::cout);
+                    //std::cout << "aaaaaaaaaaaaaaaaaaa" << std::endl; std::flush(std::cout);
                     return TRITONJSON_STATUSSUCCESS;
+                    //return nullptr;
                 }
 
                 // \see Parse(const char* base, const size_t size)

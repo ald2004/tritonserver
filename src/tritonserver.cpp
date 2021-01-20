@@ -1756,14 +1756,17 @@ extern "C" {
         std::shared_ptr<ni::InferenceBackend> backend;
         RETURN_IF_STATUS_ERROR(
             lserver->GetInferenceBackend(model_name, model_version, &backend));
-
+        
+       /* std::cout << backend->Name() << "----------" << backend->Version() << std::endl;
+        densenet_onnx----------1*/
         if (backend->Config().model_transaction_policy().decoupled()) {
             *txn_flags = TRITONSERVER_TXN_DECOUPLED;
         }
         else {
             *txn_flags = TRITONSERVER_TXN_ONE_TO_ONE;
         }
-
+        //if(*txn_flags == TRITONSERVER_TXN_ONE_TO_ONE)
+        //std::cout << "gggggggggggggggg" << std::endl; std::flush(std::cout); TRITONSERVER_TXN_ONE_TO_ONE
         return nullptr;  // Success
     }
 

@@ -73,9 +73,9 @@ endif
 CPP=g++
 NVCC=nvcc
 OPTS=-Ofast
-LDFLAGS= -ldl -lrt -lre2 -lb64 -ltritonserver -lm -pthread -levhtp -levent 
+LDFLAGS= -ldl -lrt -lre2 -lb64 -lm -pthread -levhtp -levent
 #LDFLAGS= -lX11 -ldl -lm -pthread -I/usr/include/boost 
-COMMON= -Iinclude/ -I3rd/ -I3rd/libevent/include -I3rd/libevhtp/include -I/usr/include/boost -L/opt/work/boe/tritonserver/3rd/libevhtp/lib -L/opt/work/triton-server/build/libevent/install/lib
+COMMON= -Iinclude/ -I3rd/ -I3rd/libevent/include -I3rd/libevhtp/include -I/usr/include/boost -L/opt/work/boe/tritonserver/3rd/libevhtp/lib -L/opt/work/triton-server/build/libevent/install/lib 
 CFLAGS=-Wall -Wfatal-errors -Wno-unused-result -Wno-unknown-pragmas -fPIC
 
 ifeq ($(DEBUG), 1)
